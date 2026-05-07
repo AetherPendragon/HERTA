@@ -1,0 +1,44 @@
+# Herta RAG Protocol Generator - Dependencies
+# 安装方式: pip install -r requirements.txt
+
+# CLI 框架
+typer>=0.12.0
+
+# 数据验证
+pydantic>=2.0.0
+
+# 数值计算
+numpy>=1.26.0
+
+# 向量检索
+faiss-cpu>=1.7.4
+
+# 稀疏检索 (BM25)
+rank-bm25>=0.2.2
+
+# 中文分词
+jieba>=0.42.1
+
+# 文档解析
+python-docx>=1.1.0
+PyMuPDF>=1.24.0
+
+# 智谱 AI SDK
+zai-sdk>=0.2.0
+
+# Compare 模块依赖
+# AST 解析
+tree-sitter>=0.21.0
+tree-sitter-c>=0.21.0
+
+# 树编辑距离 (AST 相似度)
+apted>=1.0.3
+
+# 模糊字符串匹配
+rapidfuzz>=3.0.0
+
+# 科学计算 (线性分配算法)
+scipy>=1.12.0
+
+# YAML配置解析
+pyyaml>=6.0.0

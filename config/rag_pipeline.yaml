@@ -1,0 +1,127 @@
+# Herta RAG Pipeline 配置文件
+# 控制RAG处理流程的各个阶段开关和参数
+
+pipeline:
+  # 全局配置
+  name: "herta_rag_pipeline"
+  version: "2.0"
+  fail_on_error: false  # 某个阶段失败时是否中断整个pipeline
+
+  # 各阶段开关和配置
+  stages:
+
+    # ===== Stage 1: Query Rewrite =====
+    # 查询改写：将原始查询改写为检索友好的形式
+    query_rewrite:
+      enabled: true
+      params:
+        mode: "code_semantic"  # 可选: code_semantic | structured | hybrid | llm_enhanced
+        max_expansions: 3      # 最大扩展数量
+        preserve_original: true  # 是否保留原始query用于fallback
+
+    # ===== Stage 2: Retrieval =====
+    # 检索阶段：支持Vector、BM25或融合检索
+    retrieval:
+      enabled: true
+      params:
+        kb_dir: "data/kb/gdwx"  # 知识库目录
+        strategy: "fusion"     # 可选: vector_only | bm25_only | fusion
+        top_k: 20             # 初始召回数量
+
+        # 融合检索参数
+        alpha: 0.6            # 向量权重 (0-1)，1-alpha为BM25权重
+        vector_weight: 0.6
+        bm25_weight: 0.4
+
+        # 纯向量检索参数（当strategy=vector_only时）
+        vector:
+          metric: "ip"        # inner product (cosine similarity)
+          min_score: 0.5      # 最小相似度阈值
+
+        # 纯BM25参数（当strategy=bm25_only时）
+        bm25:
+          k1: 1.5             # BM25参数
+          b: 0.75             # BM25参数
+
+    # ===== Stage 3: Rerank =====
+    # 精排阶段：使用LLM对候选chunk进行相关性评分
+    rerank:
+      enabled: true
+      params:
+        model: null           # 使用的LLM模型，null表示使用默认
+        top_n: 5              # 精排后保留数量
+        threshold: 5.0        # 最低接受分数 (0-10)
+        batch_size: 5         # LLM评分批次大小
+        strategy: "llm_score" # 可选: llm_score | cross_encoder
+
+    # ===== Stage 4: Context Compression =====
+    # 上下文压缩：提取相关部分，丢弃噪声
+    context_compression:
+      enabled: true
+      params:
+        relevance_threshold: 6.0    # 相关性阈值，低于此值丢弃
+        max_compression_ratio: 0.5  # 最大压缩比例
+        preserve_code_structure: true  # 是否保持代码结构完整
+        preserve_function_boundaries: true  # 是否保持函数边界
+        task_aware: true            # 根据任务类型(config/handler)调整压缩策略
+
+    # ===== Stage 5: Structured Context Injection =====
+    # 结构化上下文注入：构建函数清单或字段schema
+    structured_context:
+      enabled: true
+      params:
+        build_function_manifest: true   # 构建函数清单（handler生成用）
+        build_field_schema: false       # 构建字段schema（config生成用）
+        include_dependencies: true      # 包含函数依赖关系
+        include_checklist: true         # 包含检查清单
+
+    # ===== Stage 6: Prompt Building =====
+    # Prompt构建阶段（通常不关闭）
+    prompt_building:
+      enabled: true
+      params:
+        template_dir: "prompts"
+        max_context_length: 8000    # 上下文最大长度
+        format: "structured"        # 可选: simple | structured | hierarchical
+
+    # ===== Stage 7: LLM Generation =====
+    # LLM生成阶段（通常不关闭）
+    llm_generation:
+      enabled: true
+      params:
+        model: null               # null使用默认模型
+        temperature: 0.1
+        max_tokens: 4000
+        enable_self_reflection: false  # 是否启用生成后自我反思
+
+  # 阶段特定的覆盖配置（可选）
+  # 针对不同生成任务类型使用不同的配置
+  overrides:
+    # 针对config生成的覆盖
+    config_generation:
+      stages:
+        query_rewrite:
+          params:
+            mode: "structured"    # config生成使用结构化改写
+        context_compression:
+          params:
+            relevance_threshold: 5.0  # config可以稍微宽松
+        structured_context:
+          params:
+            build_function_manifest: false
+            build_field_schema: true
+
+    # 针对handler生成的覆盖
+    handler_generation:
+      stages:
+        query_rewrite:
+          params:
+            mode: "code_semantic" # handler生成强调代码语义
+        retrieval:
+          params:
+            strategy: "fusion"   # handler使用融合检索
+            alpha: 0.6           # 稍微降低向量权重，提高BM25对函数名的敏感度
+        structured_context:
+          params:
+            build_function_manifest: true  # 必须构建函数清单
+            include_checklist: true
