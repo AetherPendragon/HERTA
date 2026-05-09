@@ -204,6 +204,45 @@ class BaseChunker(ABC):
         )
 
 
+class DirectChunker(BaseChunker):
+    """
+    直接注入策略：每个文件保持完整，不做任何分块
+
+    适用于源文件总量较小（< 200KB）的场景，
+    把所有参考文件完整注入 Prompt，最大化信息量。
+    """
+
+    def chunk(self, doc: SourceDocument) -> List[Chunk]:
+        """每个文档保持完整，只生成一个 chunk"""
+        text = doc.text.strip()
+        if not text:
+            return []
+
+        # 粗略估算 token 数（中文约 1.5 字符/token，英文约 4 字符/token）
+        token_count = len(text) // 2
+
+        chunk = Chunk(
+            chunk_id=self._next_chunk_id(),
+            source=doc.source,
+            file=doc.file,
+            kind=doc.kind,
+            section="full_content",
+            chunk_strategy="direct",
+            chunk_index=0,
+            text=text,
+            token_count=token_count,
+            metadata={
+                "strategy": "direct",
+                "char_count": len(text),
+            },
+        )
+        return [chunk]
+
+    def _next_chunk_id(self) -> str:
+        self._chunk_counter += 1
+        return f"direct_{self._chunk_counter:04d}"
+
+
 def create_chunker(
     strategy: str,
     chunk_size: int = 500,
@@ -248,5 +287,10 @@ def create_chunker(
     elif strategy == "proposition":
         from herta.kb.proposition_chunker import PropositionChunker
         return PropositionChunker(config)
+    elif strategy == "code_aware":
+        from herta.kb.code_chunker import CodeAwareChunker
+        return CodeAwareChunker(config)
+    elif strategy == "direct":
+        return DirectChunker(config)
     else:
-        raise ValueError(f"未知的分块策略: {strategy}。支持: simple, semantic, autosize, proposition")
+        raise ValueError(f"未知的分块策略: {strategy}。支持: simple, semantic, autosize, proposition, code_aware, direct")

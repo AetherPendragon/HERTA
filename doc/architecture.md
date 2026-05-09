@@ -66,10 +66,8 @@ herta/
 │       └── gdwx/
 │           ├── chunks.jsonl             # 知识库切分后的文本与代码块数据
 │           ├── meta.json                # 知识库元数据，如来源文件、分块信息、构建配置等
-│           ├── vector.index             # FAISS 向量索引文件（语义检索）
-│           ├── embeddings.npy           # 分块后的 embedding 向量数据
-│           ├── bm25_index.pkl           # BM25 稀疏索引（关键词检索）✅ **新增**
-│           └── bm25_corpus.json         # BM25 语料元数据 ✅ **新增**
+│           ├── vector.index             # 向量索引文件，用于相似语义检索
+│           └── embeddings.npy           # 分块后的 embedding 向量数据
 │
 ├── doc/                                 # 用于存放项目设计文档。
 │   ├── architecture.md                  # 项目架构设计文档，描述系统模块、流程和目录约定
@@ -111,32 +109,21 @@ herta/
 │       │   ├── selector.py              # 自动分块大小选择策略（Auto-Size）
 │       │   ├── proposition_chunker.py   # 命题分块策略：基于原子事实命题
 │       │   ├── builder.py               # 知识库构建模块，负责组织分块、embedding 和索引
-│       │   ├── store.py                 # 向量存储抽象模块，封装 FAISS 索引实现
-│       │   ├── bm25_index.py            # BM25 稀疏索引模块 ✅ **新增**
-│       │   └── hybrid_store.py          # 融合检索存储模块（Vector + BM25）✅ **新增**
+│       │   └── store.py                 # 向量存储抽象模块，封装 FAISS 索引实现
 │       ├── generator/                     # 生成编排层（实现为独立子包）
 │       │   ├── __init__.py              # generator 子包初始化文件
-│       │   ├── pipeline/                  # 统一 Pipeline 模块 ✅ **新增**
-│       │   │   ├── __init__.py          # Pipeline 模块导出
-│       │   │   ├── base.py              # Pipeline 基类（PipelineStage, PipelineContext, UnifiedPipeline）
-│       │   │   ├── config.py            # Pipeline 配置管理（YAML 加载、动态覆盖）
-│       │   │   └── stages.py            # 7 个 Stage 实现
 │       │   ├── schemas.py               # 生成相关数据模型（TargetProtocolSpec, RetrievedChunk等）
 │       │   ├── prompt_loader.py         # Prompt 模板加载与渲染模块
 │       │   ├── target_parser.py         # 目标协议文档解析模块
-│       │   ├── retriever.py             # 知识库检索封装模块（增强：融合检索）
-│       │   ├── query_rewriter.py        # 查询改写模块 ✅ **新增**
-│       │   ├── reranker.py              # Chunk 精排模块（LLM 评分）✅ **新增**
-│       │   ├── context_compressor.py    # 上下文压缩模块 ✅ **新增**
-│       │   ├── function_registry.py     # 函数注册表模块（函数清单构建）✅ **新增**
-│       │   ├── config_generator.py      # 配置生成器：生成 config.json（增强：Pipeline 支持）
-│       │   └── handler_generator.py     # Handler 生成器：两阶段生成 + 后验证（增强）
+│       │   ├── retriever.py             # 知识库检索封装模块
+│       │   ├── config_generator.py      # 配置生成器：生成 config.json
+│       │   └── handler_generator.py     # Handler 生成器：两阶段生成 handler.c
 │       ├── llm/
 │       │   ├── __init__.py              # llm 子包初始化文件
 │       │   └── client.py                # LLM 客户端封装，负责模型 API 调用（chat + embeddings）
 │       ├── compare/                       # 对比评测层
 │       │   ├── __init__.py              # compare 子包初始化文件
-│       │   ├── json_compare.py          # JSON 配置对比模块，计算 4 个维度相似度
+│       │   ├── json_compare.py          # JSON 配置对比模块，计算 5 个维度相似度
 │       │   ├── c_ast_parser.py          # C 代码 AST 解析模块（tree-sitter）
 │       │   ├── ast_similarity.py        # AST 相似度计算（TED + 语义特征）
 │       │   ├── function_matcher.py      # 函数匹配模块（匈牙利算法）
@@ -190,7 +177,7 @@ Herta 采用五层架构：
 
 ### 4.2 核心流程
 
-#### 流程 A：构建知识库（RAG Ingestion）✅ **更新**
+#### 流程 A：构建知识库（RAG Ingestion）
 
 输入：
 
@@ -210,62 +197,39 @@ Herta 采用五层架构：
    - 分块大小选择（自动评估候选参数并选择最佳配置）
    - 命题分块（将文本拆解为原子事实命题）
 4. 为每个 chunk 生成 metadata。
-5. 计算 embedding（智谱 AI embedding-3）。
-6. **构建 FAISS 向量索引**（语义检索）。
-7. **构建 BM25 稀疏索引**（关键词检索）✅ **新增**
-   - 中文分词（jieba）
-   - 代码标识符提取（函数名、命令字）
-   - 加权处理（重要标识符重复以提升权重）
-8. 输出构建报告，记录分块策略、参数、chunk 数量、索引状态。
+5. 计算 embedding。
+6. 建立本地向量索引与元数据存储。
+7. 输出构建报告，记录分块策略、参数、chunk 数量和索引状态。
 
 输出：
 
 - `data/kb/gdwx/`
 - `data/kb/gdwx/chunks.jsonl`
 - `data/kb/gdwx/meta.json`
-- `data/kb/gdwx/vector.index`（FAISS 向量索引）
+- `data/kb/gdwx/vector.index`
 - `data/kb/gdwx/embeddings.npy`
-- `data/kb/gdwx/bm25_index.pkl`（BM25 稀疏索引）✅ **新增**
-- `data/kb/gdwx/bm25_corpus.json`（BM25 语料）✅ **新增**
 - `data/kb/gdwx/build_report.json`
 
-#### 流程 B：基于目标协议生成代码（Pipeline 模式）✅ **更新**
+#### 流程 B：基于目标协议生成代码
 
 输入：
 
 * `dllg.doc`
 * `data/kb/gdwx/`
-* `config/rag_pipeline.yaml`（Pipeline 配置）
 
-处理（配置生成）：
+处理：
 
-1. 解析目标协议文档，转换成结构化表示。
-2. **Query Rewrite**：改写查询为结构化形式。
-3. **Fusion Retrieval**：执行向量检索（FAISS）+ BM25 检索，召回候选。
-4. **Rerank**：使用 LLM 对候选 chunk 评分（0-10），取 top 5。
-5. **Context Compression**：压缩上下文，提取相关部分。
-6. **Prompt Building**：组装最终 Prompt。
-7. **LLM Generation**：生成 `dllg_config.json`。
-8. 保存中间产物和生成结果。
-
-处理（Handler 生成）：
-
-1. 解析目标协议文档，提取命令、帧、字段、中间结构。
-2. **Query Rewrite**：改写查询为代码语义化形式。
-3. **Fusion Retrieval**：执行融合检索（α=0.6）。
-4. **Rerank**：精排获取高质量上下文。
-5. **Context Compression**：压缩并提取相关代码片段。
-6. **Structured Context Injection**：构建函数清单，注入 Prompt。
-7. **Prompt Building**：组装包含函数清单的 Prompt。
-8. **LLM Generation**：生成 handler 代码。
-9. **后验证**：检查函数完整性，补充缺失函数。
-10. 保存中间产物和生成结果。
+1. 解析目标协议文档, 转换成 json 文件 ，便于处理。
+2. 抽取命令、帧、字段、中间结构。
+3. 按生成任务检索相关上下文。
+4. 先生成 `dllg_config.json`。
+5. 再基于配置和检索结果生成 `dllg_handler.c`。
+6. 保存中间 Prompt 和生成结果。
 
 输出：
 
 * `output/generated/dllg/dllg_config.json`
 * `output/generated/dllg/dllg_handler.c`
-* `output/intermediate/dllg/pipeline_trace.json`（Pipeline 执行元数据）✅ **新增**
 
 #### 流程 C：结果对比评测
 
@@ -586,89 +550,6 @@ class BaseChunker:
 
 这样 `buildkb` 只需要决定“选哪种 chunker + 传什么参数”，不需要感知具体实现细节。
 
-### 5.5a Pipeline 统一编排模块 ✅ **新增**
-
-位置：`src/herta/generator/pipeline/`
-
-职责：
-
-* 实现模块化、可配置的 7 阶段 RAG Pipeline。
-* 每个阶段可独立开关，通过 YAML 配置控制。
-* 支持 Pipeline 模式和传统模式切换（向后兼容）。
-* 提供详细的执行 trace 用于调试。
-
-核心组件：
-
-* `PipelineStage`：阶段基类，定义统一接口 `process(context) -> context`
-* `PipelineContext`：上下文对象，在各阶段间传递数据
-* `UnifiedPipeline`：Pipeline 编排器，按顺序执行各阶段
-* `PipelineConfig`：配置管理，支持 YAML 加载和动态覆盖
-
-7 个 Stage：
-
-| Stage | 模块 | 功能 | 可开关 |
-|-------|------|------|--------|
-| 1 | `QueryRewriteStage` | 查询改写（代码语义化） | ✅ |
-| 2 | `FusionRetrievalStage` | 融合检索（Vector + BM25） | ✅ |
-| 3 | `RerankStage` | LLM 精排（0-10 评分） | ✅ |
-| 4 | `ContextCompressionStage` | 上下文压缩 | ✅ |
-| 5 | `StructuredContextStage` | 函数清单注入 | ✅ |
-| 6 | `PromptBuildingStage` | Prompt 构建 | 必需 |
-| 7 | `LLMGenerationStage` | LLM 生成 | 必需 |
-
-配置示例（config/rag_pipeline.yaml）：
-
-```yaml
-pipeline:
-  stages:
-    query_rewrite:
-      enabled: true
-      params:
-        mode: "code_semantic"
-    retrieval:
-      enabled: true
-      params:
-        strategy: "fusion"
-        alpha: 0.6
-    rerank:
-      enabled: true
-      params:
-        top_n: 5
-        threshold: 5.0
-```
-
----
-
-### 5.5b BM25 稀疏索引模块 ✅ **新增**
-
-位置：`src/herta/kb/bm25_index.py`
-
-职责：
-
-* 实现 BM25 稀疏索引，用于关键词检索。
-* 特别适合匹配函数名、命令字、字段名等标识符。
-* 支持中文分词（jieba）和代码标识符提取。
-
-特点：
-
-* 支持驼峰命名、下划线命名的标识符提取
-* 对重要标识符（CMD_XXX、handler 等）自动加权
-* 可配置 BM25 参数（k1, b）
-
----
-
-### 5.5c 融合检索存储模块 ✅ **新增**
-
-位置：`src/herta/kb/hybrid_store.py`
-
-职责：
-
-* 同时管理向量索引（FAISS）和 BM25 索引。
-* 提供融合检索接口，支持加权融合。
-* 融合公式：`final_score = α * vector_score + (1-α) * bm25_score`
-
----
-
 ### 5.6 Generator 生成编排模块
 
 位置：`src/herta/generator/`
@@ -676,83 +557,56 @@ pipeline:
 职责：
 
 * 解析目标协议文档，提取结构化信息。
-* 从知识库检索相关上下文（支持融合检索）。
+* 从知识库检索相关上下文。
 * 加载和渲染 Prompt 模板。
-* 编排多阶段代码生成流程（配置生成、Handler 三阶段生成）。
+* 编排多阶段代码生成流程（配置生成、Handler 两阶段生成）。
 * 校验生成结果格式并保存。
-* **后验证**：检查函数完整性并补充缺失函数 ✅ **新增**
 
 子模块：
 
-* `pipeline/`：统一 Pipeline 模块 ✅ **新增**
-* `query_rewriter.py`：查询改写模块 ✅ **新增**
-* `reranker.py`：Chunk 精排模块 ✅ **新增**
-* `context_compressor.py`：上下文压缩模块 ✅ **新增**
-* `function_registry.py`：函数注册表模块 ✅ **新增**
-* `schemas.py`：生成相关数据模型定义。
+* `schemas.py`：生成相关数据模型定义（TargetProtocolSpec, RetrievedChunk, GenerationContext 等）。
 * `target_parser.py`：目标协议文档解析，提取摘要和章节结构。
-* `retriever.py`：知识库检索封装，支持向量检索、BM25 检索、融合检索。
+* `retriever.py`：知识库检索封装，支持向量相似度搜索。
 * `prompt_loader.py`：Prompt 模板加载与变量渲染。
-* `config_generator.py`：配置生成器，支持 Pipeline 和传统模式。
-* `handler_generator.py`：Handler 生成器，采用三阶段生成策略（Plan + Code + Verification）。
+* `config_generator.py`：配置生成器，生成目标协议的 config.json。
+* `handler_generator.py`：Handler 生成器，采用两阶段生成策略（设计草图 + 完整代码）。
 
-#### 三阶段 Handler 生成流程 ✅ **更新**
+#### 两阶段 Handler 生成流程
 
 **阶段A - 生成设计草图（Plan）**：
 
 输入：
 * 目标协议文档结构化结果
 * 从知识库检索到的 handler 代码片段和文档
-* **函数清单（FunctionList）** ✅ **新增**
 
 处理：
-1. **构建函数清单**：从目标协议提取所有需要生成的函数 ✅ **新增**
-2. 调用 LLM 生成设计草图
-3. 包含函数列表、命令分发逻辑、遥测处理逻辑、内部通信逻辑
-4. 明确标注 TODO 和未知点
+1. 调用 LLM 生成设计草图
+2. 包含函数列表、命令分发逻辑、遥测处理逻辑、内部通信逻辑
+3. 明确标注 TODO 和未知点
 
 输出：
-* 结构化设计计划（Markdown 格式）
-* **函数清单检查清单** ✅ **新增**
+* 结构化设计计划（Markdown 格式，可选保存到 `output/intermediate/`）
 
 **阶段B - 生成完整代码（Code）**：
 
 输入：
 * 阶段A生成的设计草图
-* **函数清单（强制约束）** ✅ **新增**
-* 检索到的参考上下文（已压缩和精排）
-* Prompt 模板（包含函数清单注入）
+* 检索到的参考上下文
+* Prompt 模板
 
 处理：
-1. **Prompt 注入函数清单**：在 Prompt 中明确要求生成所有函数 ✅ **新增**
-2. 调用 LLM 生成完整 C 代码
-3. 确保代码结构清晰，包含必要的错误处理
-4. 不确定的部分用 TODO 标记，但不能省略函数框架
+1. 基于设计草图调用 LLM 生成完整 C 代码
+2. 确保代码结构清晰，包含必要的错误处理
+3. 添加 TODO 注释标记不确定的部分
 
 输出：
-* 完整的 handler.c 代码文件（初稿）
-
-**阶段C - 后验证与补充（Verification）** ✅ **新增**
-
-输入：
-* 生成的 handler.c 代码
-* 函数清单（预期函数集合）
-
-处理：
-1. **检查函数完整性**：比对代码中实际生成的函数与函数清单 ✅ **新增**
-2. 识别缺失的函数
-3. **补充生成缺失函数**：调用 LLM 为缺失函数生成实现 ✅ **新增**
-4. 追加到现有代码中
-
-输出：
-* 完整的 handler.c 代码文件（终稿）
-* **缺失函数报告** ✅ **新增**
+* 完整的 handler.c 代码文件
 
 设计要求：
 
 * 使用低温度（temperature=0.1），保证生成结果可复现。
 * 保存完整的 Prompt 和模型响应，便于追溯。
-* **强制生成所有函数清单中的函数**，不能遗漏。
+* 对输出进行基础格式校验（JSON 有效性、C 代码完整性检查）。
 * 未知字段用 `null` 或 `"TODO"` 占位，禁止虚构。
 
 ---
@@ -892,9 +746,7 @@ final_score = 0.25 * config_score
 
 ---
 
-## 6. 数据流设计 ✅ **更新**
-
-### 6.1 传统数据流（向后兼容）
+## 6. 数据流设计
 
 ```text
 源协议 gdwx 文档与代码
@@ -927,60 +779,11 @@ final_score = 0.25 * config_score
                      报告输出
 ```
 
-### 6.2 Pipeline 数据流 ✅ **新增**
-
-```text
-源协议 gdwx 文档与代码
-        │
-        ▼
- 文档解析 / 代码切块
-        │
-        ├──────────────────────┐
-        ▼                      ▼
-  FAISS 向量索引         BM25 稀疏索引
-        │                      │
-        └──────────┬───────────┘
-                   ▼
-          融合索引存储 (HybridIndexStore)
-                   │
-                   ▼
-目标协议 dllg 文档输入
-        │
-        ▼
-  协议结构化抽取
-        │
-        ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Unified RAG Pipeline                            │
-├─────────────────────────────────────────────────────────────────────┤
-│  [1] Query Rewrite → [2] Fusion Retrieval → [3] Rerank              │
-│       ↓                    ↓                  ↓                       │
-│  code_semantic      vector + bm25      LLM scoring                  │
-│       ↓                    ↓                  ↓                       │
-│  [4] Context Compression → [5] Structured Context → [6] Prompt      │
-│       ↓                          ↓                                  │
-│  extract relevant          FunctionList injection                   │
-│       ↓                                                             │
-│  [7] LLM Generation                                                 │
-└─────────────────────────────────────────────────────────────────────┘
-        │
-        ├──────────► 生成 dllg_config.json
-        │
-        └──────────► 生成 dllg_handler.c
-                           │
-                           ▼
-                   后验证（函数完整性检查）
-                           │
-                           ▼
-                   与真实代码对比评测
-                           │
-                           ▼
-                       报告输出
-```
-
 ---
 
-## 7. 配置设计 ✅ **更新**
+## 7. 配置设计
+
+建议通过环境变量和配置文件统一管理：
 
 ### 7.1 环境变量
 
@@ -992,89 +795,11 @@ final_score = 0.25 * config_score
 * `HERTA_EMBED_MODEL`
 * `HERTA_LOG_LEVEL`
 
-### 7.2 Pipeline 配置文件 ✅ **新增**
+### 7.2 配置文件
 
-路径：`config/rag_pipeline.yaml`
+建议增加：
 
-控制 7 阶段 Pipeline 的开关和参数，支持针对不同生成类型（config/handler）的配置覆盖。
-
-内容结构：
-
-```yaml
-pipeline:
-  name: "herta_rag_pipeline"
-  version: "2.0"
-  fail_on_error: false
-  
-  stages:
-    # Stage 1: Query 改写
-    query_rewrite:
-      enabled: true
-      params:
-        mode: "code_semantic"  # code_semantic | structured | llm_enhanced | hybrid
-    
-    # Stage 2: 融合检索
-    retrieval:
-      enabled: true
-      params:
-        strategy: "fusion"     # fusion | vector_only | bm25_only
-        alpha: 0.6             # 向量权重（0-1）
-        kb_dir: "data/kb/gdwx"
-    
-    # Stage 3: 精排
-    rerank:
-      enabled: true
-      params:
-        top_n: 5
-        threshold: 5.0         # 最低接受分数（0-10）
-    
-    # Stage 4: 上下文压缩
-    context_compression:
-      enabled: true
-      params:
-        relevance_threshold: 6.0
-        preserve_code_structure: true
-    
-    # Stage 5: 结构化上下文
-    structured_context:
-      enabled: true
-      params:
-        build_function_manifest: true   # 仅 handler 生成使用
-        include_checklist: true
-    
-    # Stage 6: Prompt 构建（必需）
-    prompt_building:
-      enabled: true
-      params:
-        max_context_length: 8000
-    
-    # Stage 7: LLM 生成（必需）
-    llm_generation:
-      enabled: true
-      params:
-        temperature: 0.1
-  
-  # 生成类型特定的配置覆盖
-  overrides:
-    config_generation:
-      stages:
-        query_rewrite:
-          params:
-            mode: "structured"    # config 使用结构化改写
-    
-    handler_generation:
-      stages:
-        query_rewrite:
-          params:
-            mode: "code_semantic" # handler 使用代码语义改写
-        retrieval:
-          params:
-            alpha: 0.6             # handler 平衡语义和关键词
-```
-
-### 7.3 传统配置文件（可选）
-
-路径：`config/herta.yaml`
+* `config/herta.yaml`
 
 内容可包括：
 
@@ -1182,7 +907,7 @@ CLI 应返回非零退出码，并输出可理解的错误信息。
 
 ---
 
-## 14. 实现状态汇总 ✅ **更新**
+## 14. 实现状态汇总
 
 ### 已完成功能
 
@@ -1195,34 +920,15 @@ CLI 应返回非零退出码，并输出可理解的错误信息。
 | 1 | 代码解析 | 完成 | 支持 json/c/h 解析 |
 | 1 | buildkb 命令 | 完成 | 支持四种分块策略 |
 | 1 | 知识库构建 | 完成 | 分块 -> Embedding -> FAISS 索引 |
-| **1a** | **BM25 稀疏索引** | **完成** | **rank-bm25 + jieba 中文分词** ✅ **新增** |
-| **1b** | **融合检索** | **完成** | **Vector + BM25 联合召回** ✅ **新增** |
-| **2a** | **Query 改写** | **完成** | **4 种模式：code_semantic/structured/llm_enhanced/hybrid** ✅ **新增** |
-| **2b** | **两阶段检索** | **完成** | **召回 20 → 精排 5（LLM 评分）** ✅ **新增** |
-| **2c** | **上下文压缩** | **完成** | **智能提取相关部分** ✅ **新增** |
-| **2d** | **函数清单注入** | **完成** | **强制生成完整函数集合** ✅ **新增** |
-| **2e** | **Pipeline 架构** | **完成** | **7 阶段模块化 Pipeline** ✅ **新增** |
-| 2 | generate config | 完成 | 支持 Pipeline 和传统模式 |
-| 2 | generate handler | 完成 | **三阶段**生成 (plan + code + verification) |
-| 2 | 知识库检索 | 完成 | 向量检索 + BM25 + 融合检索 |
+| 2 | generate config | 完成 | 单阶段生成 config.json |
+| 2 | generate handler | 完成 | 两阶段生成 handler.c (plan + code) |
+| 2 | 知识库检索 | 完成 | 向量相似度检索 |
 | 3 | 四种分块策略 | 完成 | simple, semantic, auto-size, proposition |
 | 4 | LLM 客户端 | 完成 | 支持 chat 和 embeddings，自动分批 |
 | 5 | compare 子命令 | 完成 | 结果对比评测 CLI 命令 |
-| 5 | compare/ 模块 | 完成 | JSON/C 代码对比实现 |
+| 5 | compare/ 模块 | 完成 | JSON/C 代码对比实现，输出 metrics.json 和 comparison_report.md |
 | 5 | JSON 比较 | 完成 | 拓扑/命令表/遥测表/内部处理 4 维度相似度 |
 | 5 | C 代码 AST 比较 | 完成 | 基于 tree-sitter + 匈牙利算法函数匹配 |
-
-### 新增模块汇总 ✅ **新增**
-
-| 模块 | 位置 | 功能 |
-|------|------|------|
-| `BM25Index` | `kb/bm25_index.py` | BM25 稀疏索引，关键词检索 |
-| `HybridIndexStore` | `kb/hybrid_store.py` | 融合索引存储 |
-| `UnifiedPipeline` | `generator/pipeline/` | 7 阶段 Pipeline 编排 |
-| `QueryRewriter` | `generator/query_rewriter.py` | 查询改写 |
-| `ChunkReranker` | `generator/reranker.py` | LLM 精排 |
-| `ContextCompressor` | `generator/context_compressor.py` | 上下文压缩 |
-| `FunctionRegistryBuilder` | `generator/function_registry.py` | 函数清单构建 |
 
 ### 预留/未实现功能
 
@@ -1237,7 +943,7 @@ CLI 应返回非零退出码，并输出可理解的错误信息。
 ### 推荐后续优先级
 
 1. **高优先级**：实现 runall 命令，支持一键执行完整实验
-2. **中优先级**：基于 Pipeline trace 数据优化各阶段参数
+2. **中优先级**：优化 compare 的相似度算法，提升准确性
 3. **低优先级**：实现 inspect 命令，用于查看知识库内容
 4. **可选**：补充缺失的 Prompt 模板和工具函数
 

@@ -7,12 +7,16 @@
 - .doc 不支持，建议转换为 docx/pdf
 """
 
-from pathlib import Path
-from typing import List, Optional, Dict, Any
+from __future__ import annotations
 
-from herta.kb.schemas import SourceDocument
+from pathlib import Path
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
+
 from herta.utils.text import normalize_text, strip_extra_blank_lines
 from herta.logging import get_logger
+
+if TYPE_CHECKING:
+    from herta.kb.schemas import SourceDocument
 
 logger = get_logger(__name__)
 
@@ -92,6 +96,8 @@ class DocParser:
 
         按段落解析，保留段落结构
         """
+        from herta.kb.schemas import SourceDocument
+
         if not DOCX_AVAILABLE:
             raise ImportError("python-docx 未安装，无法解析 docx 文件")
 
@@ -167,6 +173,8 @@ class DocParser:
 
         按页解析，每页作为一个 document
         """
+        from herta.kb.schemas import SourceDocument
+
         if not PDF_AVAILABLE:
             raise ImportError("PyMuPDF 未安装，无法解析 pdf 文件")
 

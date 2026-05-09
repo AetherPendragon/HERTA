@@ -92,27 +92,30 @@ class GenerationContext:
     model: str
     temperature: float
     output_schema: str = """{
-  "protocol_name": "协议名称",
-  "protocol_id": "协议ID",
-  "version": "版本号",
-  "fields": [
+  "version": "版本号，字符串，如 1.0",
+  "author": "作者标识，字符串",
+  "start_index": "起始命令编号，整数",
+  "cmd_list": [
     {
-      "name": "字段名",
-      "type": "字段类型",
-      "description": "字段描述",
-      "default": "默认值"
+      "desc": "命令描述，字符串，格式为 {target}_功能名称",
+      "cmd": "命令编号，整数，从 start_index 开始递增",
+      "handler": "处理函数名，字符串，格式为 {target}_功能名称"
     }
   ],
-  "commands": {
-    "cmd_name": {
-      "code": "命令字",
-      "description": "命令描述",
-      "parameters": []
+  "tele_handler": [
+    {
+      "desc": "遥测帧描述，字符串，格式为 {target}_tele_frame_XX",
+      "len": "帧数据长度，整数（字节数）",
+      "handler": "处理函数名，字符串，格式为 {target}_tele_frame_XX"
     }
-  },
-  "telemetry": {
-    "fields": []
-  }
+  ],
+  "internal_handler": [
+    {
+      "desc": "内部处理项描述，字符串",
+      "len": "数据长度，整数（字节数）",
+      "handler": "处理函数名，字符串"
+    }
+  ]
 }"""
 
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -134,17 +137,23 @@ class GenerationContext:
         """
         格式化检索到的上下文，用于 Prompt
 
-        Args:
-            max_length: 最大字符长度，超出则截断
-
-        Returns:
-            格式化的上下文字符串
+        按结构优先级排序：完整 JSON 模板 > JSON 字段 > C 代码 > 文档段落，
+        尽可能保留全部检索结果不做截断。
         """
         if not self.retrieved_chunks:
             return "（未检索到相关参考信息）"
 
+        kind_priority = {"code_json": 0, "code_c": 1, "code_h": 1, "doc": 2}
+
+        def sort_key(chunk):
+            kind_pri = kind_priority.get(chunk.kind, 3)
+            section_pri = 0 if chunk.section == "full_content" else 1
+            return (kind_pri, section_pri, -chunk.score)
+
+        sorted_chunks = sorted(self.retrieved_chunks, key=sort_key)
+
         sections = []
-        for i, chunk in enumerate(self.retrieved_chunks, 1):
+        for i, chunk in enumerate(sorted_chunks, 1):
             sections.append(f"【参考片段 {i}】\n{chunk.format_for_prompt()}")
 
         context = "\n\n".join(sections)
@@ -158,22 +167,27 @@ class GenerationContext:
         """
         格式化目标协议摘要，用于 Prompt
 
-        Returns:
-            格式化的摘要字符串
+        传入完整文档原文和所有章节结构，让 LLM 获得最大信息量。
         """
         sections_info = ""
         if self.target.sections:
             sections_info = "\n文档结构:\n" + "\n".join(
-                f"  - {s.get('title', s.get('name', '未命名章节'))}" 
-                for s in self.target.sections[:10]  # 最多显示10个章节
+                f"  - {s.get('title', s.get('name', '未命名章节'))}"
+                for s in self.target.sections
             )
-            if len(self.target.sections) > 10:
+            if len(self.target.sections) > 20:
                 sections_info += f"\n  ... 等共 {len(self.target.sections)} 个章节"
+
+        # 完整原文（不截断）
+        full_doc = self.target.raw_text
 
         return f"""【目标协议】
 名称: {self.target.target_name}
 文档路径: {self.target.document_path}
-摘要: {self.target.summary}{sections_info}
+结构化摘要: {self.target.summary}{sections_info}
+
+【目标协议完整原文】
+{full_doc}
 """
 
 

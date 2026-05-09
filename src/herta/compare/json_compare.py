@@ -73,6 +73,18 @@ class ConfigComparator:
         "internal_handler": 0.20,
     }
 
+    # 常见协议前缀，用于 handler 名归一化
+    PROTOCOL_PREFIXES = ["dllg_", "gdwx_", "dllg", "gdwx"]
+
+    def _normalize_handler_name(self, name: str) -> str:
+        """去掉协议前缀，统一比较"""
+        name = name.strip()
+        for prefix in self.PROTOCOL_PREFIXES:
+            if name.lower().startswith(prefix):
+                name = name[len(prefix):]
+                break
+        return name.strip("_")
+
     # 期望的第二层字段
     EXPECTED_TOP_FIELDS = [
         "version",
@@ -183,25 +195,27 @@ class ConfigComparator:
             issues.append(f"缺失第二层字段: {missing_fields}")
 
         # 第三层：检查列表类型和非空
-        list_checks = {
-            "cmd_list": isinstance(self.gen.get("cmd_list"), list),
-            "tele_handler": isinstance(self.gen.get("tele_handler"), list),
-            "internal_handler": isinstance(self.gen.get("internal_handler"), list),
-        }
+        list_checks = {}
+        valid_lists = 0
 
-        valid_lists = sum(list_checks.values())
-        score += (valid_lists / 3) * 30.0
-
-        details["list_type_check"] = list_checks
-
-        for name, valid in list_checks.items():
-            if not valid:
+        for name in ["cmd_list", "tele_handler", "internal_handler"]:
+            val = self.gen.get(name)
+            if isinstance(val, list) and len(val) > 0:
+                list_checks[name] = True
+                valid_lists += 1
+            elif isinstance(val, list):
+                list_checks[name] = False
+                issues.append(f"{name} 为空列表")
+            else:
+                list_checks[name] = False
                 if name not in self.gen:
                     issues.append(f"{name} 不存在")
                 else:
                     issues.append(f"{name} 不是列表类型")
-            elif not self.gen.get(name):
-                issues.append(f"{name} 为空列表")
+
+        score += (valid_lists / 3) * 30.0
+
+        details["list_type_check"] = list_checks
 
         # 第四层：检查列表元素字段
         element_field_score = 0.0
@@ -253,9 +267,16 @@ class ConfigComparator:
                 issues=["cmd_list 类型错误"],
             )
 
-        # 转换为以 cmd 为 key 的字典
-        gen_cmds = {item.get("cmd"): item for item in gen_list if isinstance(item, dict)}
-        gt_cmds = {item.get("cmd"): item for item in gt_list if isinstance(item, dict)}
+        # 转换为以 cmd 为 key 的字典（统一转为 int 避免类型不匹配）
+        def _normalize_cmd_key(item):
+            v = item.get("cmd")
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                return v
+
+        gen_cmds = {_normalize_cmd_key(item): item for item in gen_list if isinstance(item, dict)}
+        gt_cmds = {_normalize_cmd_key(item): item for item in gt_list if isinstance(item, dict)}
 
         details = {
             "gen_count": len(gen_list),
@@ -288,8 +309,13 @@ class ConfigComparator:
         else:
             avg_score = 0.0
 
+        # 数量覆盖率惩罚：生成不足按比例扣分
+        if len(gt_list) > 0:
+            count_ratio = min(len(gen_list), len(gt_list)) / len(gt_list)
+            avg_score *= count_ratio
+
         return CompareResult(
-            score=avg_score,
+            score=max(0.0, avg_score),
             details=details,
             issues=issues,
         )
@@ -300,10 +326,13 @@ class ConfigComparator:
         """比较单个命令项"""
         result = {"cmd": cmd, "score": 0.0, "checks": {}}
 
-        # handler 是否完全一致
-        gen_handler = gen_item.get("handler", "")
-        gt_handler = gt_item.get("handler", "")
-        handler_match = gen_handler == gt_handler
+        # handler 匹配（支持归一化：去掉协议前缀后比较）
+        gen_handler = str(gen_item.get("handler", "")).strip()
+        gt_handler = str(gt_item.get("handler", "")).strip()
+        handler_match = (
+            gen_handler == gt_handler
+            or self._normalize_handler_name(gen_handler) == self._normalize_handler_name(gt_handler)
+        )
         result["checks"]["handler"] = {
             "gen": gen_handler,
             "gt": gt_handler,
@@ -320,20 +349,13 @@ class ConfigComparator:
             "similarity": desc_similarity,
         }
 
-        # cmd 是否存在
-        cmd_exists = cmd == gt_item.get("cmd")
-        result["checks"]["cmd_exists"] = cmd_exists
-
         # 计算单项得分
-        # handler 完全匹配: 40分
-        # desc 相似度: 40分 (按相似度比例)
-        # cmd 存在: 20分
+        # handler 完全匹配: 50分
+        # desc 相似度: 50分 (按相似度比例)
         score = 0.0
         if handler_match:
-            score += 40.0
-        score += (desc_similarity / 100.0) * 40.0
-        if cmd_exists:
-            score += 20.0
+            score += 50.0
+        score += (desc_similarity / 100.0) * 50.0
 
         result["score"] = score
         return result
@@ -371,9 +393,16 @@ class ConfigComparator:
                 issues=[f"{list_name} 类型错误"],
             )
 
-        # 以 handler 为 key 构建字典
-        gen_items = {item.get("handler"): item for item in gen_list if isinstance(item, dict)}
-        gt_items = {item.get("handler"): item for item in gt_list if isinstance(item, dict)}
+        # 以 handler 为 key 构建字典（支持归一化匹配，去掉协议前缀）
+        gen_items: Dict[str, Dict] = {}
+        for item in gen_list:
+            if isinstance(item, dict):
+                raw_handler = (item.get("handler") or "").strip()
+                gen_items[raw_handler] = item
+                norm = self._normalize_handler_name(raw_handler)
+                if norm != raw_handler:
+                    gen_items[norm] = item
+        gt_items = {(item.get("handler") or "").strip(): item for item in gt_list if isinstance(item, dict)}
 
         details = {
             "gen_count": len(gen_list),
@@ -404,8 +433,13 @@ class ConfigComparator:
         else:
             avg_score = 0.0
 
+        # 数量覆盖率惩罚：生成不足按比例扣分
+        if len(gt_list) > 0:
+            count_ratio = min(len(gen_list), len(gt_list)) / len(gt_list)
+            avg_score *= count_ratio
+
         return CompareResult(
-            score=avg_score,
+            score=max(0.0, avg_score),
             details=details,
             issues=issues,
         )
@@ -437,9 +471,27 @@ class ConfigComparator:
                     "similarity": similarity,
                     "score": field_score,
                 }
+            elif field == "len":
+                # len 字段统一转为 int 比较
+                try:
+                    match = int(gen_val) == int(gt_val)
+                except (ValueError, TypeError):
+                    match = str(gen_val).strip() == str(gt_val).strip()
+                field_score = max_field_score if match else 0.0
+                result["checks"][field] = {
+                    "gen": gen_val,
+                    "gt": gt_val,
+                    "match": match,
+                    "score": field_score,
+                }
             else:
-                # 其他字段精确匹配
-                match = gen_val == gt_val
+                # handler 字段：支持归一化匹配
+                gen_h = str(gen_val).strip()
+                gt_h = str(gt_val).strip()
+                match = (
+                    gen_h == gt_h
+                    or self._normalize_handler_name(gen_h) == self._normalize_handler_name(gt_h)
+                )
                 field_score = max_field_score if match else 0.0
                 result["checks"][field] = {
                     "gen": gen_val,

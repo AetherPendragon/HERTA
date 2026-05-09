@@ -174,13 +174,24 @@ class VectorStore:
             output_dir: 输出目录
             embeddings: 原始向量数组（可选，用于保存 embeddings.npy）
         """
+        import tempfile
+        import shutil
+
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 保存 FAISS 索引
+        # 保存 FAISS 索引（先写到临时文件再复制，解决中文路径问题）
         if self.index is not None:
             index_path = output_dir / "vector.index"
-            faiss.write_index(self.index, str(index_path))
+            with tempfile.NamedTemporaryFile(suffix=".index", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                faiss.write_index(self.index, tmp_path)
+                shutil.copy2(tmp_path, str(index_path))
+            finally:
+                import os
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
             logger.debug(f"保存索引: {index_path}")
 
         # 保存 chunk_ids 映射
@@ -204,12 +215,23 @@ class VectorStore:
         Args:
             output_dir: 索引所在目录
         """
+        import tempfile
+        import shutil
+
         output_dir = Path(output_dir)
 
-        # 加载 FAISS 索引
+        # 加载 FAISS 索引（先复制到临时文件解决中文路径问题）
         index_path = output_dir / "vector.index"
         if index_path.exists():
-            self.index = faiss.read_index(str(index_path))
+            with tempfile.NamedTemporaryFile(suffix=".index", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                shutil.copy2(str(index_path), tmp_path)
+                self.index = faiss.read_index(tmp_path)
+            finally:
+                import os
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
             self.dimension = self.index.d
             logger.debug(f"加载索引: {index_path}, vectors={self.index.ntotal}")
         else:

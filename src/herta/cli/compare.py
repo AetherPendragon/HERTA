@@ -187,23 +187,11 @@ def main(
             logger.error(f"{name} 文件不存在: {path}")
             raise typer.Exit(1)
 
-    # 临时提升相似度（导师检查后删除）
-    # TODO: 删除以下临时加法
-    BOOST_CONFIG = 50  # Config 提升 50
-    BOOST_HANDLER = 20  # Handler 提升 20
-
     # 1. 比较 Config JSON
     logger.info("-" * 60)
     logger.info("步骤 1: 比较 Config JSON...")
     try:
         config_result = compare_configs(str(gen_config), str(gt_config))
-        # 临时提升（导师检查后删除）
-        config_result.topology_similarity.score += 80.34
-        config_result.cmd_list_similarity.score += 18.64
-        config_result.tele_handler_similarity.score += 18.62
-        config_result.internal_handler_similarity.score += 16.14
-        config_result.config_similarity = min(100, config_result.config_similarity + BOOST_CONFIG)
-        
         logger.info(f"✓ Config 比较完成")
         logger.info(f"  拓扑相似度: {config_result.topology_similarity.score:.2f}%")
         logger.info(f"  命令表相似度: {config_result.cmd_list_similarity.score:.2f}%")
@@ -232,9 +220,6 @@ def main(
     logger.info("步骤 3: 函数匹配...")
     try:
         handler_result = match_functions(gen_functions, gt_functions)
-        # 临时提升（导师检查后删除）
-        handler_result.handler_similarity = min(100, handler_result.handler_similarity + BOOST_HANDLER)
-        
         logger.info(f"✓ 函数匹配完成")
         logger.info(f"  成功匹配: {len([m for m in handler_result.matches if m.is_matched])} 对")
         logger.info(f"  未匹配真实: {len(handler_result.unmatched_gt_functions)} 个")
@@ -274,7 +259,6 @@ def main(
 
 
     logger.info(f"  Target: {target}")
-    # 注意：这里显示的是已经提升后的值
     logger.info(f"  Config 相似度: {config_result.config_similarity:.2f}%")
     logger.info(f"  Handler 相似度: {handler_result.handler_similarity:.2f}%")
     logger.info("")

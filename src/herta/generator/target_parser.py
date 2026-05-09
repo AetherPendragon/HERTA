@@ -6,6 +6,7 @@
 """
 
 from pathlib import Path
+import re
 from typing import Optional, List, Dict, Any
 
 from herta.generator.schemas import TargetProtocolSpec
@@ -126,44 +127,89 @@ class TargetParser:
 
         return sections
 
-    def _generate_summary(self, text: str, max_length: int = 500) -> str:
+    def _generate_summary(self, text: str, max_length: int = 16000) -> str:
         """
-        生成文本摘要（简化版）
+        生成文本摘要（结构化提取版）
 
-        当前实现：提取前 max_length 个字符，尝试在句子边界截断
-
-        Args:
-            text: 完整文本
-            max_length: 摘要最大长度
-
-        Returns:
-            摘要文本
+        尽可能保留完整文档内容，仅在文档极长时截断。
         """
         if len(text) <= max_length:
             return text.strip()
 
-        # 尝试在句子边界截断
-        truncated = text[:max_length]
+        # 文档很长时，保留开头 + 各关键段落 + 数量提示
+        sections = []
 
-        # 寻找最后一个句子结束符
-        sentence_ends = ['。', '！', '？', '. ', '! ', '? ', '\n']
-        last_end = -1
+        # 开头 2000 字符（协议概述）
+        sections.append(f"[协议概述] {text[:2000]}")
 
-        for end_char in sentence_ends:
-            pos = truncated.rfind(end_char)
-            if pos > last_end:
-                last_end = pos
+        # 按关键词类别提取关键片段，每个窗口放大到 2000
+        key_terms = [
+            ("命令列表", ["命令", "指令", "命令字", "command", "cmd"]),
+            ("遥测帧", ["遥测", "帧格式", "数据帧", "telemetry", "frame"]),
+            ("内部处理", ["内部处理", "内部通信", "同步", "校验", "internal"]),
+            ("配置参数", ["版本", "作者", "起始", "version", "author"]),
+            ("处理函数", ["处理函数", "handler", "入口", "entry", "分发", "dispatch"]),
+            ("数据结构", ["数据结构", "结构体", "帧格式", "数据包", "struct"]),
+        ]
 
-        if last_end > 0:
-            truncated = truncated[:last_end + 1]
+        for category, terms in key_terms:
+            snippet = self._extract_keyword_snippet(text, terms, window=2000)
+            if snippet:
+                sections.append(f"[{category}] {snippet}")
 
-        summary = truncated.strip()
+        # 提取数量信息
+        counts = self._extract_counts(text)
+        count_lines = [f"【数量提示】{k}: {v}" for k, v in counts.items() if v]
+        if count_lines:
+            sections.append("\n".join(count_lines))
 
-        # 添加省略号
-        if len(text) > len(truncated):
-            summary += " ...（内容已截断）"
+        summary = "\n\n".join(sections)
+
+        if len(summary) > max_length:
+            summary = summary[:max_length] + " ...（内容已截断）"
 
         return summary
+
+    def _extract_counts(self, text: str) -> Dict[str, Optional[int]]:
+        """从文档文本中提取各类条目数量"""
+        counts: Dict[str, Optional[int]] = {}
+        patterns = [
+            ("命令", [r"(\d+)\s*个命令", r"命令\D*共\D*(\d+)", r"(\d+)\s*条命令"]),
+            ("遥测", [r"(\d+)\s*个遥测", r"遥测\D*共\D*(\d+)", r"(\d+)\s*帧",
+                      r"遥测帧.*?(\d+)"]),
+            ("内部处理", [r"(\d+)\s*个内部", r"内部\D*共\D*(\d+)",
+                         r"内部处理.*?(\d+)"]),
+        ]
+        for category, pats in patterns:
+            for pat in pats:
+                m = re.search(pat, text)
+                if m:
+                    counts[category] = int(m.group(1))
+                    break
+        return counts
+
+    def _extract_keyword_snippet(
+        self, text: str, keywords: list[str], window: int = 400
+    ) -> str:
+        """
+        从文本中提取关键词周围的上下文片段
+
+        Args:
+            text: 完整文本
+            keywords: 关键词列表
+            window: 提取窗口大小
+
+        Returns:
+            提取的片段字符串
+        """
+        text_lower = text.lower()
+        for kw in keywords:
+            pos = text_lower.find(kw.lower())
+            if pos >= 0:
+                start = max(0, pos - 50)
+                end = min(len(text), pos + window)
+                return text[start:end].strip()
+        return ""
 
     def can_parse(self, file_path: Path) -> bool:
         """

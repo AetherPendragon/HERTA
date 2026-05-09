@@ -193,3 +193,31 @@ def clean_code_comments(
         code = re.sub(r"//.*?$", "", code, flags=re.MULTILINE)
 
     return strip_extra_blank_lines(code, max_consecutive=1)
+
+
+def extract_section_keywords(
+    text: str, keywords: list[str], window: int = 200
+) -> str:
+    """
+    从文本中按关键词提取上下文片段
+
+    在 text 中查找 keywords 中的关键词，取每个关键词周围 window 字符的文本，
+    拼接后返回。适合用于构造 RAG 检索 query。
+
+    Args:
+        text: 完整文本
+        keywords: 关键词列表
+        window: 提取窗口大小
+
+    Returns:
+        拼接的上下文片段
+    """
+    snippets = []
+    text_lower = text.lower()
+    for kw in keywords:
+        pos = text_lower.find(kw.lower())
+        if pos >= 0:
+            start = max(0, pos - window // 2)
+            end = min(len(text), pos + window // 2)
+            snippets.append(text[start:end].strip())
+    return " ... ".join(snippets) if snippets else ""
