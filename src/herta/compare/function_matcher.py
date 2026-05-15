@@ -364,11 +364,11 @@ class FunctionMatcher:
         name_match_rate = name_matches / len(matched_sims) if matched_sims else 0.0
 
         # 综合评分
-        # 主体是平均相似度，加上覆盖率和同名率的奖励
+        # 覆盖率占大头（函数缺失应严重扣分），平均相似度和同名率为辅
         handler_sim = (
-            avg_similarity * 0.80 +
-            coverage * 0.10 +
-            name_match_rate * 0.10
+            avg_similarity * 0.50 +
+            coverage * 0.30 +
+            name_match_rate * 0.20
         ) * 100  # 转换为百分制
 
         return min(handler_sim, 100.0)

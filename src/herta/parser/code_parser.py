@@ -9,14 +9,18 @@
 直接按文本方式读取，保留文件结构和注释
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 
-from herta.kb.schemas import SourceDocument
 from herta.utils.text import normalize_text, strip_extra_blank_lines
 from herta.utils.fileio import read_text
 from herta.logging import get_logger
+
+if TYPE_CHECKING:
+    from herta.kb.schemas import SourceDocument
 
 logger = get_logger(__name__)
 
@@ -74,6 +78,8 @@ class CodeParser:
 
         读取整个文件作为单个文档，同时尝试提取关键字段
         """
+        from herta.kb.schemas import SourceDocument
+
         logger.info(f"解析 json: {file_path}")
 
         try:
@@ -143,6 +149,8 @@ class CodeParser:
 
         读取整个文件，同时尝试提取函数定义作为独立文档
         """
+        from herta.kb.schemas import SourceDocument
+
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
         kind = "code_c" if ext == ".c" else "code_h"

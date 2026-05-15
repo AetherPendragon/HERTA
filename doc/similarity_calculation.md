@@ -134,6 +134,8 @@ ast_similarity = 0.70 × tree_edit_similarity + 0.30 × semantic_feature_similar
    similarity = 1 - (distance / (max_nodes × 2))
    ```
 
+**备选方案**: 如果 apted 不可用，使用简化计算（节点数量和类型统计）
+
 #### Semantic Feature Similarity（语义特征相似度）
 
 **提取的特征**:

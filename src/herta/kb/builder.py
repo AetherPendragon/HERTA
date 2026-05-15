@@ -203,24 +203,140 @@ class KnowledgeBaseBuilder:
 
     def _chunk_all(self, source_docs: List[SourceDocument]) -> List[Chunk]:
         """对所有文档进行分块"""
-        # 创建分块器，使用 ChunkConfig 中的所有参数
+        # Direct 策略：所有文件都不切，直接注入
+        if self.chunk_strategy == "direct":
+            self.chunker = create_chunker(strategy="direct")
+            all_chunks = self.chunker.chunk_batch(source_docs)
+            logger.info(f"Direct 分块: {len(source_docs)} 个文档 -> {len(all_chunks)} 个 chunks（每个文件完整保留）")
+            return all_chunks
+
+        # 其他策略：代码文件走 code_aware，文档文件走用户选择的策略
         kwargs = self.chunk_config.to_dict()
-        # 移除一些不需要传递给 create_chunker 的字段
         for key in ['strategy', 'chunk_size', 'chunk_overlap', 'eval_questions', 'selection_output']:
             if key in kwargs:
                 del kwargs[key]
 
-        self.chunker = create_chunker(
-            strategy=self.chunk_strategy,
-            chunk_size=self.chunk_config.chunk_size,
-            chunk_overlap=self.chunk_config.chunk_overlap,
-            **kwargs
-        )
+        code_docs = [d for d in source_docs if d.kind in ("code_c", "code_h", "code_json")]
+        other_docs = [d for d in source_docs if d.kind not in ("code_c", "code_h", "code_json")]
 
-        # 批量分块
-        chunks = self.chunker.chunk_batch(source_docs)
+        all_chunks = []
 
-        return chunks
+        if code_docs:
+            code_chunker = create_chunker(
+                strategy="code_aware",
+                chunk_size=self.chunk_config.chunk_size,
+                chunk_overlap=self.chunk_config.chunk_overlap,
+            )
+            code_chunks = code_chunker.chunk_batch(code_docs)
+            all_chunks.extend(code_chunks)
+            logger.info(f"Code-aware 分块: {len(code_docs)} 个代码文档 -> {len(code_chunks)} 个 chunks")
+
+        if other_docs:
+            merged_docs = self._merge_short_docs(other_docs)
+            self.chunker = create_chunker(
+                strategy=self.chunk_strategy,
+                chunk_size=self.chunk_config.chunk_size,
+                chunk_overlap=self.chunk_config.chunk_overlap,
+                **kwargs
+            )
+            other_chunks = self.chunker.chunk_batch(merged_docs)
+            all_chunks.extend(other_chunks)
+            logger.info(f"{self.chunk_strategy} 分块: {len(other_docs)} 个文档段落"
+                        f" -> 合并为 {len(merged_docs)} 个 -> {len(other_chunks)} 个 chunks")
+
+        if not code_docs:
+            self.chunker = create_chunker(
+                strategy=self.chunk_strategy,
+                chunk_size=self.chunk_config.chunk_size,
+                chunk_overlap=self.chunk_config.chunk_overlap,
+                **kwargs
+            )
+
+        return all_chunks
+
+    def _merge_short_docs(
+        self, docs: List[SourceDocument], min_length: int = 100
+    ) -> List[SourceDocument]:
+        """
+        合并短段落文档，避免生成大量无意义的碎片 chunk。
+
+        docx 解析时每个段落（含标题、目录、表头）都变成独立 SourceDocument，
+        导致 53% 的 doc chunk 不到 20 字符。此方法将同一文件的短段落合并，
+        直到达到 min_length 或遇到较长的段落。
+
+        Args:
+            docs: 原始 SourceDocument 列表
+            min_length: 合并后段落的最小字符数
+
+        Returns:
+            合并后的 SourceDocument 列表
+        """
+        if not docs:
+            return docs
+
+        # 按文件分组
+        from collections import OrderedDict
+        file_groups: OrderedDict[str, List[SourceDocument]] = OrderedDict()
+        for doc in docs:
+            key = doc.file
+            if key not in file_groups:
+                file_groups[key] = []
+            file_groups[key].append(doc)
+
+        merged = []
+        for file_key, file_docs in file_groups.items():
+            buffer_text = ""
+            buffer_source = file_docs[0].source
+            buffer_file = file_docs[0].file
+            buffer_kind = file_docs[0].kind
+
+            for doc in file_docs:
+                text = doc.text.strip()
+                if not text:
+                    continue
+
+                # 如果当前段落本身足够长，先 flush 缓冲区，再单独输出
+                if len(text) >= min_length:
+                    if buffer_text:
+                        merged.append(SourceDocument(
+                            source=buffer_source,
+                            file=buffer_file,
+                            kind=buffer_kind,
+                            section="merged",
+                            text=buffer_text.strip(),
+                            metadata={"merged": True},
+                        ))
+                        buffer_text = ""
+                    merged.append(doc)
+                else:
+                    # 短段落加入缓冲区
+                    buffer_text += text + "\n"
+
+                    # 缓冲区达到阈值时 flush
+                    if len(buffer_text) >= min_length:
+                        merged.append(SourceDocument(
+                            source=buffer_source,
+                            file=buffer_file,
+                            kind=buffer_kind,
+                            section="merged",
+                            text=buffer_text.strip(),
+                            metadata={"merged": True},
+                        ))
+                        buffer_text = ""
+
+            # flush 剩余缓冲区
+            if buffer_text.strip():
+                merged.append(SourceDocument(
+                    source=buffer_source,
+                    file=buffer_file,
+                    kind=buffer_kind,
+                    section="merged",
+                    text=buffer_text.strip(),
+                    metadata={"merged": True},
+                ))
+
+        logger.info(f"短段落合并: {len(docs)} -> {len(merged)} 个文档")
+        return merged
 
     def _generate_embeddings(self, chunks: List[Chunk]) -> np.ndarray:
         """生成 embeddings"""

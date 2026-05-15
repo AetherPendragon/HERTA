@@ -49,6 +49,20 @@ data/kb/
 !data/kb/.gitkeep
 *.log
 
+# Frontend
+frontend/node_modules/
+frontend/.next/
+
+# Claude Code
+.claude/
+
+# Screenshots
+*.png
+!frontend/public/**
+
+# Template reference
+_template_ref/
+
 # OS
 .DS_Store
 Thumbs.db

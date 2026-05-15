@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herta - 工业协议代码生成系统</title>
+    <link rel="stylesheet" href="/assets/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- 侧边导航 -->
+    <nav id="sidebar">
+        <div class="nav-brand">
+            <div class="brand-icon">H</div>
+            <div class="brand-text">
+                <span class="brand-name">HERTA</span>
+                <span class="brand-sub">Protocol Generator</span>
+            </div>
+        </div>
+        <div class="nav-divider"></div>
+        <ul class="nav-links">
+            <li data-page="dashboard" class="active">
+                <span class="nav-icon">&#9673;</span>
+                <span class="nav-label">仪表盘</span>
+            </li>
+            <li data-page="knowledge">
+                <span class="nav-icon">&#9638;</span>
+                <span class="nav-label">知识库</span>
+            </li>
+            <li data-page="generate">
+                <span class="nav-icon">&#9881;</span>
+                <span class="nav-label">代码生成</span>
+            </li>
+            <li data-page="compare">
+                <span class="nav-icon">&#8976;</span>
+                <span class="nav-label">评测对比</span>
+            </li>
+            <li data-page="settings">
+                <span class="nav-icon">&#9881;</span>
+                <span class="nav-label">设置</span>
+            </li>
+        </ul>
+        <div class="nav-footer">
+            <div class="system-status">
+                <span class="status-dot online"></span>
+                <span>System Online</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main id="main-content">
+        <!-- 顶部栏 -->
+        <header id="topbar">
+            <div class="topbar-left">
+                <h1 id="page-title">仪表盘</h1>
+                <span id="page-subtitle" class="topbar-subtitle"></span>
+            </div>
+            <div class="topbar-right">
+                <span id="topbar-time" class="mono-sm"></span>
+            </div>
+        </header>
+
+        <!-- 页面容器 -->
+        <div id="pages">
+            <!-- 仪表盘 -->
+            <section id="page-dashboard" class="page active">
+                <div class="card-grid cols-4">
+                    <div class="stat-card">
+                        <div class="stat-label">知识库</div>
+                        <div class="stat-value" id="dash-kb-count">-</div>
+                        <div class="stat-sub" id="dash-kb-sub">加载中...</div>
+                    </div>
+                    <div class="stat-card accent">
+                        <div class="stat-label">Config 相似度</div>
+                        <div class="stat-value" id="dash-config-score">-</div>
+                        <div class="stat-sub" id="dash-config-sub">最近评测</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Handler 相似度</div>
+                        <div class="stat-value" id="dash-handler-score">-</div>
+                        <div class="stat-sub" id="dash-handler-sub">最近评测</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">整体相似度</div>
+                        <div class="stat-value" id="dash-overall-score">-</div>
+                        <div class="stat-sub" id="dash-overall-sub">加权总分</div>
+                    </div>
+                </div>
+
+                <div class="card-row">
+                    <div class="card half">
+                        <div class="card-header"><h3>评测指标雷达图</h3></div>
+                        <div class="card-body chart-container">
+                            <canvas id="radar-chart"></canvas>
+                            <div id="radar-empty" class="empty-state">暂无评测数据，请先运行评测对比</div>
+                        </div>
+                    </div>
+                    <div class="card half">
+                        <div class="card-header"><h3>系统信息</h3></div>
+                        <div class="card-body">
+                            <table class="info-table">
+                                <tr><td class="info-key">LLM 模型</td><td id="dash-model" class="mono">-</td></tr>
+                                <tr><td class="info-key">Embedding 模型</td><td id="dash-embed-model" class="mono">-</td></tr>
+                                <tr><td class="info-key">Embedding 维度</td><td id="dash-embed-dim" class="mono">-</td></tr>
+                                <tr><td class="info-key">API Key</td><td id="dash-api-key" class="mono">-</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 知识库 -->
+            <section id="page-knowledge" class="page">
+                <div class="toolbar">
+                    <h3>知识库列表</h3>
+                    <button class="btn primary" id="btn-build-kb">构建知识库</button>
+                </div>
+                <div id="kb-list" class="card-list">
+                    <div class="empty-state">加载中...</div>
+                </div>
+
+                <!-- 构建对话框 -->
+                <div id="build-dialog" class="modal hidden">
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-content">
+                        <h3>构建知识库</h3>
+                        <div class="form-group">
+                            <label>来源标识（对应 data/source_proto/ 下的目录名）</label>
+                            <input type="text" id="build-source" placeholder="如: gdwx" class="input">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>分块策略</label>
+                                <select id="build-strategy" class="input">
+                                    <option value="direct">Direct（直接注入）</option>
+                                    <option value="simple">Simple（固定大小）</option>
+                                    <option value="semantic">Semantic（语义分块）</option>
+                                    <option value="autosize">AutoSize（自动选优）</option>
+                                    <option value="code_aware">Code Aware（代码感知）</option>
+                                    <option value="proposition">Proposition（原子命题）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Chunk Size</label>
+                                <input type="number" id="build-chunk-size" value="500" class="input">
+                            </div>
+                            <div class="form-group">
+                                <label>Overlap</label>
+                                <input type="number" id="build-overlap" value="50" class="input">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="build-force"> 强制重建（覆盖同名已有知识库）
+                            </label>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="btn" onclick="closeModal('build-dialog')">取消</button>
+                            <button class="btn primary" id="btn-build-confirm">开始构建</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 代码生成 -->
+            <section id="page-generate" class="page">
+                <div class="workflow-steps">
+                    <div class="step active" data-step="1">
+                        <div class="step-number">1</div>
+                        <div class="step-text">选择目标协议</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="2">
+                        <div class="step-number">2</div>
+                        <div class="step-text">生成 Config</div>
+                    </div>
+                    <div class="step-line"></div>
+                    <div class="step" data-step="3">
+                        <div class="step-number">3</div>
+                        <div class="step-text">生成 Handler</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h3>目标协议</h3></div>
+                    <div class="card-body">
+                        <div class="form-row">
+                            <div class="form-group flex-1">
+                                <label>目标协议</label>
+                                <select id="gen-target" class="input">
+                                    <option value="">-- 选择目标协议 --</option>
+                                </select>
+                            </div>
+                            <div class="form-group flex-1">
+                                <label>源知识库</label>
+                                <select id="gen-source-kb" class="input">
+                                    <option value="">-- 选择知识库 --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Top-K</label>
+                                <input type="number" id="gen-topk" value="30" class="input" style="width:80px">
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn primary" id="btn-gen-config">生成 Config</button>
+                            <button class="btn" id="btn-gen-handler" disabled>生成 Handler</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 进度面板 -->
+                <div id="gen-progress" class="card hidden">
+                    <div class="card-header"><h3 id="gen-progress-title">生成中...</h3></div>
+                    <div class="card-body">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="gen-progress-bar"></div>
+                        </div>
+                        <div class="progress-msg mono-sm" id="gen-progress-msg">等待中...</div>
+                    </div>
+                </div>
+
+                <!-- 生成结果 -->
+                <div id="gen-result" class="card hidden">
+                    <div class="card-header">
+                        <h3>生成结果</h3>
+                        <div class="card-actions">
+                            <button class="btn sm" id="btn-view-config">查看 Config</button>
+                            <button class="btn sm" id="btn-view-handler">查看 Handler</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <pre class="code-block"><code id="gen-result-code"></code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 评测对比 -->
+            <section id="page-compare" class="page">
+                <div class="toolbar">
+                    <div class="form-row" style="flex:1">
+                        <div class="form-group flex-1">
+                            <select id="cmp-target" class="input">
+                                <option value="">-- 选择目标协议 --</option>
+                            </select>
+                        </div>
+                        <button class="btn primary" id="btn-run-compare">运行评测</button>
+                    </div>
+                </div>
+                <div class="form-hint" style="margin-bottom: 16px;">评测对比仅比较已生成的结果与参考实现。请确保已在"代码生成"页面完成 Config 和 Handler 的生成。</div>
+
+                <!-- 进度 -->
+                <div id="cmp-progress" class="card hidden">
+                    <div class="card-body">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="cmp-progress-bar"></div>
+                        </div>
+                        <div class="progress-msg mono-sm" id="cmp-progress-msg">等待中...</div>
+                    </div>
+                </div>
+
+                <!-- 评测结果 -->
+                <div id="cmp-results" class="hidden">
+                    <div class="card-grid cols-7">
+                        <div class="stat-card mini"><div class="stat-label">拓扑</div><div class="stat-value sm" id="cmp-topology">-</div></div>
+                        <div class="stat-card mini"><div class="stat-label">命令表</div><div class="stat-value sm" id="cmp-cmd">-</div></div>
+                        <div class="stat-card mini"><div class="stat-label">遥测表</div><div class="stat-value sm" id="cmp-tele">-</div></div>
+                        <div class="stat-card mini"><div class="stat-label">内部处理</div><div class="stat-value sm" id="cmp-internal">-</div></div>
+                        <div class="stat-card mini accent"><div class="stat-label">Config 总分</div><div class="stat-value sm" id="cmp-config">-</div></div>
+                        <div class="stat-card mini"><div class="stat-label">Handler</div><div class="stat-value sm" id="cmp-handler-score">-</div></div>
+                        <div class="stat-card mini accent"><div class="stat-label">整体相似度</div><div class="stat-value sm" id="cmp-overall-score">-</div></div>
+                    </div>
+                    <div class="card-grid cols-2">
+                        <div class="card">
+                            <div class="card-header"><h3>Handler 匹配结果</h3></div>
+                            <div class="card-body">
+                                <div class="stat-row">
+                                    <span>真实函数</span><span id="cmp-gt-count" class="mono">-</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span>生成函数</span><span id="cmp-gen-count" class="mono">-</span>
+                                </div>
+                                <div class="stat-row">
+                                    <span>成功匹配</span><span id="cmp-match-count" class="mono accent-text">-</span>
+                                </div>
+                                <div class="stat-row highlight">
+                                    <span>Handler 相似度</span><span id="cmp-handler-score-card" class="mono accent-text">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header"><h3>Config 对比详情</h3></div>
+                            <div class="card-body" id="cmp-config-detail">
+                                <div class="empty-state">运行评测后显示详情</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header"><h3>函数匹配列表</h3></div>
+                        <div class="card-body" style="padding:0">
+                            <div class="table-scroll">
+                                <table class="data-table" id="cmp-func-table">
+                                <thead>
+                                    <tr>
+                                        <th>真实函数</th>
+                                        <th>生成函数</th>
+                                        <th>同名</th>
+                                        <th>AST 相似度</th>
+                                        <th>TED</th>
+                                        <th>语义</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 设置 -->
+            <section id="page-settings" class="page">
+                <div class="card">
+                    <div class="card-header"><h3>API 设置</h3></div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>智谱 API Key</label>
+                            <input type="password" id="set-api-key" class="input" placeholder="输入你的 ZAI API Key">
+                            <div id="set-api-key-status" class="form-hint">加载中...</div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group flex-1">
+                                <label>Chat 模型</label>
+                                <input type="text" id="set-chat-model" class="input" placeholder="glm-5.1">
+                            </div>
+                            <div class="form-group flex-1">
+                                <label>Embedding 模型</label>
+                                <input type="text" id="set-embed-model" class="input" placeholder="embedding-3">
+                            </div>
+                        </div>
+                        <div class="form-hint" style="margin-top: 8px; margin-bottom: 12px;">注意：此处的设置仅在当前服务器会话有效。重启后需重新设置，或通过环境变量 ZAI_API_KEY 永久配置。</div>
+                        <button class="btn primary" id="btn-save-settings">保存设置</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Toast 通知 -->
+    <div id="toast-container"></div>
+
+    <script src="/assets/app.js"></script>
+</body>
+</html>

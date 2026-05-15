@@ -118,12 +118,12 @@ class SemanticFeatureExtractor:
     def _extract_literals(self) -> Set[str]:
         """提取字面量常量集合"""
         literals = set()
-        # 数字常量
-        numbers = re.findall(r'\b\d+\b', self.source)
-        literals.update(numbers)
-        # 十六进制
-        hex_numbers = re.findall(r'0x[0-9a-fA-F]+', self.source)
+        # 十六进制（优先匹配，避免被十进制正则截断）
+        hex_numbers = re.findall(r'\b0x[0-9a-fA-F]+\b', self.source)
         literals.update(hex_numbers)
+        # 独立数字常量（排除标识符内部的数字，如 uint8_t 中的 8）
+        numbers = re.findall(r'(?<![a-zA-Z_])\d+(?![a-zA-Z_])', self.source)
+        literals.update(numbers)
         # 字符串
         strings = re.findall(r'"([^"]*)"', self.source)
         literals.update(strings)
@@ -258,13 +258,13 @@ class ASTSimilarityCalculator:
             apted = APTED(gen_tree, gt_tree, CustomConfig())
             distance = apted.compute_edit_distance()
 
-            # 归一化
+            # 归一化：编辑距离最多等于较大树的节点数（全删+全插）
             max_nodes = max(self._count_nodes(gen_tree), self._count_nodes(gt_tree))
             if max_nodes == 0:
                 return 1.0
 
-            # 距离越小越相似
-            similarity = max(0.0, 1.0 - (distance / (max_nodes * 2)))
+            # 距离越小越相似，完全相同 → 1.0，完全不同 → 0.0
+            similarity = max(0.0, 1.0 - (distance / max_nodes))
             return similarity
 
         except Exception as e:

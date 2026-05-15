@@ -46,11 +46,6 @@ class ReportBuilder:
         Returns:
             包含所有指标的字典
         """
-        # 临时提升相似度（导师检查后删除）
-        # TODO: 删除以下两行临时加法
-        boosted_config_sim = min(100, self.config_result.config_similarity + 50)  # +50 for demo
-        boosted_handler_sim = min(100, self.handler_result.handler_similarity + 20)  # +20 for demo
-
         metrics = {
             # 基本信息
             "target": self.target,
@@ -61,13 +56,13 @@ class ReportBuilder:
             "cmd_list_similarity": round(self.config_result.cmd_list_similarity.score, 2),
             "tele_handler_similarity": round(self.config_result.tele_handler_similarity.score, 2),
             "internal_handler_similarity": round(self.config_result.internal_handler_similarity.score, 2),
-            "config_similarity": round(boosted_config_sim, 2),  # 临时提升
+            "config_similarity": round(self.config_result.config_similarity, 2),
 
             # Handler 指标
-            "handler_similarity": round(boosted_handler_sim, 2),  # 临时提升
+            "handler_similarity": round(self.handler_result.handler_similarity, 2),
 
-            # 整体指标（使用提升后的值）
-            "overall_similarity": round(boosted_config_sim * 0.35 + boosted_handler_sim * 0.65, 2),
+            # 整体指标
+            "overall_similarity": self._calculate_overall_similarity(),
 
             # 详细结果
             "config_details": self.config_result.to_dict(),
@@ -91,12 +86,6 @@ class ReportBuilder:
         """
         lines = []
 
-        # 临时提升相似度（导师检查后删除）
-        # TODO: 删除以下两行临时加法
-        boosted_config_sim = min(100, self.config_result.config_similarity + 50)  # +50 for demo
-        boosted_handler_sim = min(100, self.handler_result.handler_similarity + 20)  # +20 for demo
-        boosted_overall = boosted_config_sim * 0.35 + boosted_handler_sim * 0.65
-
         # 标题
         lines.append(f"# Herta 对比评测报告 - {self.target}")
         lines.append("")
@@ -104,9 +93,10 @@ class ReportBuilder:
         lines.append("")
 
         # 总体评分
+        overall = self._calculate_overall_similarity()
         lines.append("## 总体评分")
         lines.append("")
-        lines.append(f"**整体相似度: {boosted_overall:.2f}%**")
+        lines.append(f"**整体相似度: {overall:.2f}%**")
         lines.append("")
         lines.append("### 各维度得分")
         lines.append("")
@@ -116,9 +106,9 @@ class ReportBuilder:
         lines.append(f"| Config 命令表 | {self.config_result.cmd_list_similarity.score:.2f}% | 30% |")
         lines.append(f"| Config 遥测表 | {self.config_result.tele_handler_similarity.score:.2f}% | 30% |")
         lines.append(f"| Config 内部处理 | {self.config_result.internal_handler_similarity.score:.2f}% | 20% |")
-        lines.append(f"| **Config 总分** | **{boosted_config_sim:.2f}%** | - |")
-        lines.append(f"| Handler 代码 | {boosted_handler_sim:.2f}% | 65% |")
-        lines.append(f"| **整体加权** | **{boosted_overall:.2f}%** | - |")
+        lines.append(f"| **Config 总分** | **{self.config_result.config_similarity:.2f}%** | - |")
+        lines.append(f"| Handler 代码 | {self.handler_result.handler_similarity:.2f}% | 65% |")
+        lines.append(f"| **整体加权** | **{overall:.2f}%** | - |")
         lines.append("")
 
         # Config 详细分析
@@ -206,7 +196,7 @@ class ReportBuilder:
         lines.append("")
         lines.append("## Handler 代码详细分析")
         lines.append("")
-        lines.append(f"**Handler 相似度: {boosted_handler_sim:.2f}%**")
+        lines.append(f"**Handler 相似度: {self.handler_result.handler_similarity:.2f}%**")
         lines.append("")
 
         # 函数匹配表格

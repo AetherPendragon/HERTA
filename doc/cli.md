@@ -47,16 +47,11 @@ herta --help
 
 # 4. 命令总览
 
-Herta 目前提供的子命令：
+Herta 第一版建议提供以下子命令：
 
 1. `buildkb`：构建源协议知识库
 2. `generate`：基于目标协议文档生成代码
-   - `generate config`：生成 config.json
-   - `generate handler`：生成 handler.c
 3. `compare`：比较生成结果与真实结果
-
-预留子命令（尚未实现）：
-
 4. `runall`：一键完成完整的实验流程
 ---
 
@@ -92,8 +87,7 @@ herta buildkb \
 * `--out <path>`：知识库输出目录路径
 * `--force`：如果知识库已存在则强制覆盖重建
 * `--embed-model <name>`：指定 embedding 模型名称
-* `--chunk-strategy <name>`：分块策略
-* `--build-bm25`：同时构建 BM25 稀疏索引（用于融合检索）✅ **新增**
+* `--chunk-strategy <name>`：分块策略，
 
 #### 分块用参数详细介绍
 
@@ -104,7 +98,8 @@ herta buildkb \
   * `auto-size`
   * `proposition`
 
-默认: `simple`
+默认:
+* ` simple `
 
 
 #### 简单分块参数（`simple`）
@@ -117,9 +112,9 @@ herta buildkb \
 * `chunk-size = 1000`
 * `chunk-overlap = 200`
 
-#### 语义分块参数（`semantic`）
+#### 语义分块参数（`semantic`） 
 
-基于句子嵌入相似度识别语义边界进行分块，适合内容语义边界清晰的文档。
+占位，先不实现该分块方法，如果命令调用，则仍然使用 simple 分块方式
 
 * `--semantic-threshold-percentile <int>`：语义边界阈值分位数，例如 `90`
 * `--semantic-min-sentences <int>`：每个块至少包含的句子数
@@ -127,7 +122,8 @@ herta buildkb \
 
 #### 分块大小选择参数（`auto-size`）
 
-启发式评估多个候选参数组合，自动选择最优分块配置。
+占位，先不实现该分块方法，如果命令调用，则仍然使用 simple 分块方式
+
 
 * `--candidate-sizes <list>`：候选 chunk size 列表，例如 `500,1000,1500`
 * `--candidate-overlaps <list>`：候选 overlap 列表，例如 `100,200,300`
@@ -142,7 +138,8 @@ herta buildkb \
 
 #### 命题分块参数（`proposition`）
 
-使用 LLM 将文本分解为原子事实命题，适合需要细粒度语义检索的场景。
+占位，先不实现该分块方法，如果命令调用，则仍然使用 simple 分块方式
+
 
 * `--proposition-model <name>`：命题抽取所用模型
 * `--max-propositions-per-chunk <int>`：每个 chunk 允许的最大命题数
@@ -221,28 +218,8 @@ herta buildkb \
 3. 根据 `--chunk-strategy` 选择分块器。
 4. 生成 chunk 与 metadata。
 5. 计算 embedding。
-6. 构建并保存向量索引（FAISS）。
-7. **构建 BM25 稀疏索引（可选）** ✅ **新增**
-8. 输出构建报告。
-
-### 融合检索支持 ✅ **新增**
-
-当使用 `--build-bm25` 参数构建知识库时，系统会同时生成：
-- `vector.index` - FAISS 向量索引（语义检索）
-- `bm25_index.pkl` - BM25 稀疏索引（关键词检索）
-
-在生成阶段，可以启用融合检索：
-```bash
-# 启用融合检索（alpha 控制向量权重，默认 0.6）
-herta generate handler --kb gdwx --target dllg --fusion-alpha 0.6
-```
-
-融合检索公式：`final_score = α * vector_score + (1-α) * bm25_score`
-
-推荐值：
-- `α=0.6`：平衡语义和关键词匹配（默认）
-- `α=0.8`：更侧重语义匹配
-- `α=0.4`：更侧重关键词匹配（适合函数名检索）
+6. 构建并保存向量索引。
+7. 输出构建报告。
 
 ### 输出
 
@@ -304,42 +281,11 @@ herta generate \
 
 ### 参数说明
 
-* `--kb <path>`：知识库路径，默认 data/kb/gdwx
+* `--kb <path>`：知识库路径 , 默认 data/kb/gdwx
 * `--target <name>`：目标协议名称
-* `--target-doc <path>`：目标协议文档路径，默认 data/target_proto/dllg/dllg.doc
+* `--target-doc <path>`：目标协议文档路径 ， 默认 data/target_proto/dllg/dllg.doc
 * `--out <path>`：生成文件输出目录
 * `--model <name>`：指定 LLM 模型名称
-* `--use-pipeline`：启用 Pipeline 模式（默认启用）✅ **新增**
-* `--pipeline-config <path>`：指定 Pipeline 配置文件路径，默认 config/rag_pipeline.yaml ✅ **新增**
-* `--fusion-alpha <float>`：融合检索权重（0-1），默认 0.6 ✅ **新增**
-* `--top-k <int>`：检索候选数量，默认 20（Pipeline 召回阶段）✅ **新增**
-* `--save-plan`：（handler 生成）保存设计计划
-* `--save-prompts`：保存生成的 Prompt 文本
-* `--save-context`：保存检索到的上下文
-
-#### Pipeline 模式配置 ✅ **新增**
-
-Pipeline 模式通过 YAML 配置文件控制各阶段开关：
-
-```bash
-# 使用默认 Pipeline 配置生成 handler
-herta generate handler --kb gdwx --target dllg
-
-# 使用自定义 Pipeline 配置
-herta generate handler --kb gdwx --target dllg --pipeline-config my_pipeline.yaml
-
-# 禁用 Pipeline，使用传统模式
-herta generate handler --kb gdwx --target dllg --use-pipeline=false
-```
-
-Pipeline 阶段开关配置（config/rag_pipeline.yaml）：
-- `query_rewrite`: 查询改写（代码语义化）
-- `retrieval`: 融合检索（Vector + BM25）
-- `rerank`: LLM 精排（0-10 评分）
-- `context_compression`: 上下文压缩
-- `structured_context`: 函数清单注入（仅 handler）
-- `prompt_building`: Prompt 构建
-- `llm_generation`: LLM 生成
 
 
 ### 默认路径推断规则
@@ -362,25 +308,13 @@ herta generate --kb gdwx --target dllg
 * `output/generated/dllg/dllg_config.json`
 * `output/generated/dllg/dllg_handler.c`
 
-### 执行逻辑（Pipeline 模式）✅ **更新**
+### 执行逻辑
 
 1. 解析目标协议文档。
-2. **Query Rewrite**：改写查询为代码语义化形式。
-3. **Fusion Retrieval**：执行向量检索 + BM25 检索，召回候选。
-4. **Rerank**：使用 LLM 对候选 chunk 评分，取 top 5。
-5. **Context Compression**：压缩上下文，提取相关部分。
-6. **Structured Context**（仅 handler）：构建函数清单，注入 Prompt。
-7. **Prompt Building**：组装最终 Prompt。
-8. **LLM Generation**：生成配置文件或 handler 代码。
-9. **后验证**（仅 handler）：检查函数完整性，补充缺失函数。
-10. 保存中间产物和模型输出。
-
-### 执行逻辑（传统模式，向后兼容）
-
-1. 解析目标协议文档。
-2. 从知识库检索相关上下文（纯向量检索）。
-3. 生成配置文件或 handler 代码。
-4. 保存中间产物和模型输出。
+2. 从知识库检索相关上下文。
+3. 生成 `dllg_config.json`。
+4. 再生成 `dllg_handler.c`。
+5. 保存中间 Prompt、检索结果和模型输出。
 
 ---
 
@@ -537,23 +471,32 @@ pip install tree-sitter tree-sitter-c apted rapidfuzz scipy
 
 ---
 
-## 5.4 `herta runall`【预留】
+## 5.4 `herta runall`
 
 ### 作用
 
 一键执行完整实验：构建知识库、生成代码、对比评测。
 
-### 状态
-
-**该命令为预留功能，尚未实现。**
-
-### 计划用法
+### 典型用法
 
 ```bash
 herta runall --source gdwx --target dllg
 ```
 
-### 预计参数
+### 显式指定目录版本
+
+```bash
+herta runall \
+  --source gdwx \
+  --target dllg \
+  --source-dir data/source_proto/gdwx \
+  --target-dir data/target_proto/dllg \
+  --kb-out data/kb/gdwx \
+  --gen-out output/generated/dllg \
+  --report-out output/reports/dllg
+```
+
+### 参数说明
 
 * `--source <name>`：源协议名称
 * `--target <name>`：目标协议名称
@@ -565,7 +508,7 @@ herta runall --source gdwx --target dllg
 * `--skip-compare`：跳过对比评测
 * `--force`：强制覆盖旧结果
 
-### 预计执行顺序
+### 执行顺序
 
 1. `buildkb`
 2. `generate`
@@ -575,8 +518,6 @@ herta runall --source gdwx --target dllg
 
 适用于一次性完成完整实验验证。
 
-**当前替代方案**：需依次手动执行 `buildkb`、`generate config`、`generate handler`、`compare` 命令。
-
 ---
 
 
@@ -584,35 +525,16 @@ herta runall --source gdwx --target dllg
 
 ## 6.1 典型完整实验流程
 
-### 第一步：构建知识库（启用 BM25 用于融合检索）✅ **更新**
+### 第一步：构建知识库
 
 ```bash
-herta buildkb --source gdwx --build-bm25
+herta buildkb --source gdwx
 ```
 
-### 第二步：生成 `dllg` 代码（Pipeline 模式）✅ **更新**
-
-生成配置文件（Pipeline 模式）：
-```bash
-herta generate config --kb gdwx --target dllg --save-prompts --save-context
-```
-
-生成 handler 代码（Pipeline 模式，融合检索 + 函数清单）：
-```bash
-herta generate handler --kb gdwx --target dllg --save-plan --save-prompts --fusion-alpha 0.6
-```
-
-### 高级用法：自定义 Pipeline 配置 ✅ **新增**
+### 第二步：生成 `dllg` 代码
 
 ```bash
-# 使用自定义 Pipeline 配置
-herta generate handler --kb gdwx --target dllg --pipeline-config config/my_pipeline.yaml
-
-# 禁用 Query Rewrite
-herta generate handler --kb gdwx --target dllg --no-query-rewrite
-
-# 调整融合检索权重（更侧重函数名匹配）
-herta generate handler --kb gdwx --target dllg --fusion-alpha 0.4
+herta generate --kb gdwx --target dllg --save-prompts --save-context
 ```
 
 ### 第三步：对比结果
@@ -628,13 +550,11 @@ cat output/reports/dllg/comparison_report.md
 
 ---
 
-## 6.2 一键执行【预留】
+## 6.2 一键执行
 
 ```bash
 herta runall --source gdwx --target dllg --force
 ```
-
-**注意**：`runall` 命令为预留功能，尚未实现。当前需依次执行 `buildkb`、`generate config`、`generate handler`、`compare` 命令。
 
 ---
 
@@ -663,21 +583,9 @@ herta runall --source gdwx --target dllg --force
 
 ---
 
-# 9. 当前可用命令集合
-
-## 已实现的命令（基础功能）
+# 9. 第一版最小命令集合
 
 * `herta buildkb --source gdwx`
-* `herta generate config --kb gdwx --target dllg`
-* `herta generate handler --kb gdwx --target dllg`
+* `herta generate --kb gdwx --target dllg`
 * `herta compare --target dllg`
-
-## 已实现的命令（增强功能）✅ **新增**
-
-* `herta buildkb --source gdwx --build-bm25` - 构建融合检索知识库
-* `herta generate config --kb gdwx --target dllg --use-pipeline` - Pipeline 模式生成配置
-* `herta generate handler --kb gdwx --target dllg --fusion-alpha 0.6` - 融合检索生成 handler
-
-## 预留的命令
-
-* `herta runall --source gdwx --target dllg`（尚未实现）
+* `herta runall --source gdwx --target dllg`

@@ -266,5 +266,8 @@ void handler_deinit(void)
 - 数据结构（如 packet_header_t）如果未定义，应在文件顶部补充定义或加 TODO
 - 错误码应统一，建议沿用参考代码中的错误码定义
 - 与 internal_handler、cmd_handler 的交互接口要清晰
+- **函数命名规则**: 所有 handler 函数名必须遵循 `{target}_功能名称` 模式（如 dllg_app_manager, dllg_tele_frame_00）
+- **从参考上下文提取具体值**: 命令字、数据长度、帧格式等具体数值必须从参考代码片段中提取，不要编造
+- **保持与源协议代码风格一致**: 参考上下文中的代码片段展示了正确的代码风格和结构，请严格模仿
 
 请直接输出完整的 C 代码文件内容（不要有任何 markdown 标记）：
