@@ -27,6 +27,19 @@ app.add_typer(generate.app, name="generate")
 app.add_typer(compare.app, name="compare")
 
 
+@app.command(name="api")
+def api_server(
+    host: Annotated[str, typer.Option(help="监听地址")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="监听端口")] = 8000,
+) -> None:
+    """启动 Web API 服务（供前端界面使用）"""
+    import uvicorn
+
+    logger.info(f"启动 Herta API 服务: http://{host}:{port}")
+    uvicorn.run("herta.api.app:app", host=host, port=port, reload=False)
+
+
+
 @app.callback()
 def main(
     verbose: Annotated[

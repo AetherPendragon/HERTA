@@ -28,6 +28,25 @@ export default function GeneratePage() {
       .catch(() => {});
   }, []);
 
+  // 支持通过 URL 参数预选中并加载已有结果，如 /generate?target=dllg&kb=gdwx&result=1
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("target");
+    const kb = params.get("kb");
+    if (t) setSelectedTarget(t);
+    if (kb) setSelectedKb(kb);
+    if (params.get("view") === "handler") setViewMode("handler");
+    if (t && params.get("result") === "1") {
+      api.generateResult(t)
+        .then((result) => {
+          if (result.config) setConfigResult(JSON.stringify(result.config, null, 2));
+          if (result.handler_source) setHandlerResult(result.handler_source);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   const pollTask = useCallback(async (taskId: string, onDone: () => void) => {
     const poll = async () => {
       try {

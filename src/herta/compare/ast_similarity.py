@@ -254,12 +254,24 @@ class ASTSimilarityCalculator:
             gen_tree = ASTNode.from_dict(gen_dict)
             gt_tree = ASTNode.from_dict(gt_dict)
 
+            # APTED 复杂度随节点数超线性增长，大函数（如主调度循环）会导致
+            # 单对函数计算耗时数分钟。超过阈值时回退到简化相似度。
+            MAX_TED_NODES = 200
+            gen_nodes = self._count_nodes(gen_tree)
+            gt_nodes = self._count_nodes(gt_tree)
+            if max(gen_nodes, gt_nodes) > MAX_TED_NODES:
+                logger.debug(
+                    f"AST 节点数过大（生成 {gen_nodes} / 真实 {gt_nodes}），"
+                    f"跳过 apted，使用简化计算"
+                )
+                return self._simple_tree_similarity(gen_ast, gt_ast)
+
             # 使用 apted 计算编辑距离
             apted = APTED(gen_tree, gt_tree, CustomConfig())
             distance = apted.compute_edit_distance()
 
             # 归一化：编辑距离最多等于较大树的节点数（全删+全插）
-            max_nodes = max(self._count_nodes(gen_tree), self._count_nodes(gt_tree))
+            max_nodes = max(gen_nodes, gt_nodes)
             if max_nodes == 0:
                 return 1.0
 

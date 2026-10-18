@@ -44,6 +44,14 @@ export default function KnowledgePage() {
 
   useEffect(() => { loadKbs(); }, [loadKbs]);
 
+  // 支持通过 URL 参数直接打开某个知识库的可视化，如 /knowledge?viz=gdwx
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const viz = new URLSearchParams(window.location.search).get("viz");
+    if (viz) loadVisualization(viz);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const loadVisualization = useCallback(async (source: string) => {
     setSelectedKb(source);
     try {

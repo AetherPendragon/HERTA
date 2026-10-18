@@ -18,6 +18,13 @@ export default function ComparePage() {
     api.targets().then((res) => setTargets(res.targets || [])).catch(() => {});
   }, []);
 
+  // 支持通过 URL 参数直接选中目标协议，如 /compare?target=dllg
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("target");
+    if (t) setSelectedTarget(t);
+  }, []);
+
   // 选择 target 后自动加载已有评测结果
   useEffect(() => {
     if (!selectedTarget) return;

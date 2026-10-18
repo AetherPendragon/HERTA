@@ -100,8 +100,12 @@ class SimpleChunker(BaseChunker):
                 chunks.append(chunk)
                 chunk_index += 1
 
-            # 移动到下一个窗口位置（考虑重叠）
-            start = end - overlap if end < len(text) else len(text)
+            # 移动到下一个窗口位置（考虑重叠），必须保证窗口始终向前推进，
+            # 否则当句子边界落在重叠区内时 start 会后移，造成死循环
+            if end < len(text):
+                start = max(end - overlap, start + 1)
+            else:
+                start = len(text)
 
             # 防止无限循环
             if start <= 0 or (chunk_index > 0 and start >= len(text)):

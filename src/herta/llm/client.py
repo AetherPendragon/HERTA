@@ -57,7 +57,7 @@ class BigModelClient:
             messages: 消息列表，格式为 [{"role": "user", "content": "..."}, ...]
             model: 模型名称，默认使用配置中的 chat_model
             temperature: 采样温度，默认 0.1（更确定性）
-            stream: 是否流式输出，当前简化版仅支持 False
+            stream: 兼容保留参数；内部始终使用流式接收以避免长生成挂死
 
         Returns:
             模型生成的纯文本字符串
@@ -85,30 +85,40 @@ class BigModelClient:
             if "role" not in msg or "content" not in msg:
                 raise ValueError('messages 中的每项必须包含 "role" 和 "content" 字段')
 
-        # 简化版暂不支持流式输出
-        if stream:
-            logger.warning("stream=True 暂不支持，已自动切换为同步模式")
-            stream = False
-
         model_name = model or self.settings.chat_model
 
         try:
             logger.debug(f"调用 chat 接口，模型: {model_name}, 消息数: {len(messages)}")
 
+            # 长文本生成（如完整 handler.c）在非流式模式下容易长时间无数据返回，
+            # 导致连接被网关静默断开、客户端永久挂起。统一使用流式接收并拼接结果，
+            # 既保持返回值不变，又能持续接收数据、避免挂死。
             response = self._client.chat.completions.create(
                 model=model_name,
                 messages=messages,
                 temperature=temperature,
-                stream=False,
+                stream=True,
             )
 
-            # 提取返回文本
-            if hasattr(response, "choices") and len(response.choices) > 0:
-                content = response.choices[0].message.content
+            parts: List[str] = []
+            chunk_count = 0
+            for chunk in response:
+                chunk_count += 1
+                try:
+                    delta = chunk.choices[0].delta.content
+                except (AttributeError, IndexError, TypeError):
+                    delta = None
+                if delta:
+                    parts.append(delta)
+                if chunk_count % 200 == 0:
+                    logger.debug(f"流式接收中... 已接收 {chunk_count} 个分片，累计 {sum(len(p) for p in parts)} 字符")
+
+            content = "".join(parts)
+            if content:
                 logger.debug(f"chat 调用成功，返回长度: {len(content)}")
                 return content
             else:
-                raise RuntimeError("API 返回格式异常，未找到 choices 字段")
+                raise RuntimeError("API 返回格式异常，未收到有效内容")
 
         except Exception as e:
             logger.error(f"chat 调用失败: {e}")
